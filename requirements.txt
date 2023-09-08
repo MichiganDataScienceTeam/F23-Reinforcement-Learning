@@ -1,0 +1,2 @@
+gym-moving-dot @ git+https://github.com/jakal02/gym-moving-dot@f731897ada59582019c6370fa728d01c0046e493
+torch
