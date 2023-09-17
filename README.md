@@ -104,3 +104,18 @@ Once the packages are installed, you should be able to run `test-setup.py` witho
 ```bash
 python3 test-setup.py
 ```
+
+### Note for Windows display problems using WSL  
+
+If the `test-setup.py` runs fine but you never see a window pop up with the environment. Full instructions are at [this link.](https://stackoverflow.com/questions/43397162/show-matplotlib-plots-and-other-gui-in-ubuntu-wsl1-wsl2)  
+Here I have typed out the top answer from the linked StackOverflow page.
+
+First you'll have to install VcXsrv:  
+1. `sudo apt-get update`
+2. `sudo apt-get install python*-tk` where the `*` you replace with your python version. E.g. for Python 3.8 do `sudo apt-get install python3.8-tk`
+
+Next, change where outputs are send on the back-end using the following command.  
+1. `export DISPLAY=localhost:0.0`. Add this command to the end of `~/bashrc` to make it permanent, else you'll have to run this command every time you re-open your terminal.
+
+Finally, quit VcXsrv if you have it open. And re-run the application with "Diable Access Control" selected.
+
