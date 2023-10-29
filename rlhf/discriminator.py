@@ -1,14 +1,10 @@
 """Module that implements comparison of two trajectories using gymnasium."""
 
-import gymnasium
-from typing import TypeVar
-
-ObsType = TypeVar('ObsType')
-ActType = TypeVar('ActType')
+from _types import Trajectory
 
 def compare(
-    trajectory1: list[tuple[ObsType, ActType, float]],
-    trajectory2: list[tuple[ObsType, ActType, float]],
+    trajectory1: Trajectory,
+    trajectory2: Trajectory,
 ) -> tuple[float, float] | None:
     """Return a distribution mu over {1, 2} representing
     the preference toward trajectory1 or trajectory2.

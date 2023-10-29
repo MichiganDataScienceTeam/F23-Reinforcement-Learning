@@ -9,6 +9,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions import Categorical
+import matplotlib.pyplot as plt
+
+from reward_estimator import Rewards
 
 
 parser = argparse.ArgumentParser(description='PyTorch REINFORCE example')
@@ -49,6 +52,8 @@ class Policy(nn.Module):
 policy = Policy()
 optimizer = optim.Adam(policy.parameters(), lr=1e-2)
 eps = np.finfo(np.float32).eps.item()
+rewards_device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+rewards = Rewards(env, 1e-2, torch.device(rewards_device))
 
 
 def select_action(state):
@@ -60,12 +65,12 @@ def select_action(state):
     return action.item()
 
 
-def finish_episode(i_episode):
-    import matplotlib.pyplot as plt
+def finish_episode(i_episode, r_hat: torch.Tensor):
     R = 0
     policy_loss = []
     returns = deque()
-    for r in policy.rewards[::-1]:
+    # r_hat is a sequence of r_hat estimates from our reward estimator
+    for r in r_hat.numpy()[::-1]:
         R = r + args.gamma * R
         returns.appendleft(R)
     returns = torch.tensor(returns)
@@ -84,41 +89,50 @@ def finish_episode(i_episode):
     del policy.saved_log_probs[:]
 
 
+# Returns List[Tuple[ObsType, ActType, float]]
 def generate_trajectory(state):
-    observations = [state]
+    trajectory = [state]
     for _ in range(1, 10000):  # Don't infinite loop while learning
         action = select_action(state)
-        obs, _, done, _, _ = env.step(action)
-        observations.append(obs)
+        obs, reward, done, _, _ = env.step(action)
+        trajectory.append((
+            obs,
+            action,
+            reward,
+        ))
         if args.render:
             env.render()
         if done:
             break
-    return observations
+    return trajectory
 
 def main():
     running_reward = 10
+    database = []
     for i_episode in count(1):
         if i_episode == 1000:
             global env
             env = gym.make("LunarLander-v2", render_mode='human')
         state, _ = env.reset()
         ep_reward = 0
-        for t in range(1, 10000):  # Don't infinite loop while learning
-            action = select_action(state)
-            state, reward, done, _, _ = env.step(action)
-            if args.render:
-                env.render()
-            policy.rewards.append(reward)
-            ep_reward += reward
-            if done:
-                break
-        
+
         # TODO: pass trajectories to discriminator
-        compare()
+        NUM_PAIRS = 10 # i guess this is a hyperparameter
+        for _ in range(NUM_PAIRS):
+            state, _ = env.reset()
+            traj1 = generate_trajectory(state)
+            state, _ = env.reset()
+            traj2 = generate_trajectory(state)
+            feedback = compare(traj2, traj2)
+            database.append((traj1, traj2, feedback))
+        # database type: List[Tuple[Trajectory, Trajectory, Tuple[float, float]]]
 
         running_reward = 0.05 * ep_reward + (1 - 0.05) * running_reward
-        finish_episode(i_episode)
+
+        finish_episode(i_episode, rewards.estimate_reward(generate_trajectory(state)))
+
+        rewards.update(rewards.loss(database))
+
         if i_episode % args.log_interval == 0:
             print('Episode {}\tLast reward: {:.2f}\tAverage reward: {:.2f}'.format(
                   i_episode, ep_reward, running_reward))
