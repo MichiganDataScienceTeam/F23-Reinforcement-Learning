@@ -1,0 +1,13 @@
+
+[project]
+# PEP 621 project metadata
+# See https://www.python.org/dev/peps/pep-0621/
+dependencies = [
+    "gym-moving-dot @ git+https://github.com/jakal02/gym-moving-dot@f731897ada59582019c6370fa728d01c0046e493",
+    "torch",
+    "scipy>=1.9.3",
+    "tqdm>=4.66.1",
+    "matplotlib>=3.8.0",
+    "gymnasium[box2d]>=0.29.1",
+]
+requires-python = "==3.11"
