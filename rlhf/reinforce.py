@@ -113,6 +113,9 @@ def main():
             ep_reward += reward
             if done:
                 break
+        
+        # TODO: pass trajectories to discriminator
+        compare()
 
         running_reward = 0.05 * ep_reward + (1 - 0.05) * running_reward
         finish_episode(i_episode)
