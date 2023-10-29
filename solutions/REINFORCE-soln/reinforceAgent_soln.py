@@ -35,11 +35,11 @@ class VanillaAgent(nn.Module):
         layers = [
             nn.Linear(n_features, 64),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            # nn.Dropout(0.6),
             nn.Linear(64, 64),
+            # nn.Dropout(0.4),
             nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(64, n_actions)
+            nn.Linear(64, n_actions) # estimate action logits
         ]
 
         self.agent = nn.Sequential(*layers).to(self.device)
@@ -57,8 +57,7 @@ class VanillaAgent(nn.Module):
         Returns:
             action_logits: A tensor with action logits, with shape [1, n_actions].
         """
-        # TODO
-        x = torch.Tensor(x)
+        x = torch.Tensor(x).to(self.device)
         action_logits = self.agent(x)
         return action_logits
 
@@ -72,7 +71,6 @@ class VanillaAgent(nn.Module):
         self.agent_optim.zero_grad()
         loss.backward()
         self.agent_optim.step()
-        return
 
     def select_action(self, x: np.ndarray) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -85,8 +83,8 @@ class VanillaAgent(nn.Module):
             actions: a tensor representing the selected actions with shape [1, 1]
             action_log_probs: log probability of selected actions
         """
-        # TODO
         action_logits = self.forward(x)
+        # create distribution from logits, below implicitely uses softmax
         action_pdf = torch.distributions.Categorical(logits=action_logits)
         action = action_pdf.sample()
         action_log_probs = action_pdf.log_prob(action)
@@ -103,9 +101,7 @@ class VanillaAgent(nn.Module):
         """
         assert(gs.size() == log_probs.size())
 
-        # TODO
-        loss = 0
+        loss = 0.0
         loss = -torch.dot(gs, log_probs)
         loss = torch.sum(loss)
-        
         return loss

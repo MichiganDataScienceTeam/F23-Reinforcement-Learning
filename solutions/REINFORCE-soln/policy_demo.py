@@ -1,12 +1,11 @@
 """Demonstrate Policy Learned using REINFORCE algorithm."""
 import os
-import gym_moving_dot
 import gymnasium as gym
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from reinforceAgent import VanillaAgent
+from reinforceAgent_soln import VanillaAgent
 
 
 
@@ -14,7 +13,7 @@ def main():
     # Set Torch Device
     device = "cpu"
     # Create Environment
-    env = gym.make("MovingDotDiscrete-v0", render_mode="human") # No render mode, for faster learning
+    env = gym.make("LunarLander-v2", render_mode="human") # No render mode, for faster learning
     # env = gym.make("CartPole-v1")
 
     # Algorithm parameters
@@ -34,12 +33,12 @@ def main():
                         device=device)
     
     # Load Weights
-    path = "weights/reinforce_weights.h5"
+    path = "weights/reinforce_good_weights.h5"
     agent.agent.load_state_dict(torch.load(path))
     agent.agent.eval()
 
     # Run Simulation
-    for i in range(num_episodes):
+    while True:
     # for episode in range(num_episodes):
         # get an initial state
         state, _ = env.reset()
@@ -49,7 +48,7 @@ def main():
         while not done:
             # select an action A_{t} using S_{t} as input for the agent
             with torch.no_grad():
-                action, _ = agent.select_action(state)
+                action, _ = agent.select_action(state[None, :])
 
             # perform the action A_{t} in the environment to get S_{t+1} and R_{t+1}
             state, _, terminated, truncated, _ = env.step(action.item())

@@ -5,7 +5,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from reinforceAgent import VanillaAgent
+from reinforceAgent_soln import VanillaAgent
 
 
 def main() -> None:
@@ -41,20 +41,19 @@ def main() -> None:
 
         # Learn from episode, all at once because gradient changes at each step
         # Calculate G's for each state efficiently
-        gs = discount_rewards(rewards, gamma)
+        g_ests = discount_rewards(rewards, gamma)
 
         # Calculate Policy Loss
-        loss = agent.calc_loss(gs, log_actions)
-
+        loss = agent.calc_loss(g_ests, log_actions)
         agent.update(loss)
+
         # Add graphing data
         losses.append(loss)
-        total_rewards.append(rewards[0])
-
+        total_rewards.append(np.sum(rewards))
 
     plot_training_data(total_rewards, losses)
     # Save network
-    save_network(agent)
+    # save_network(agent)
     return
 
 
@@ -78,12 +77,11 @@ def generate_episode(env: gym.Env, agent: VanillaAgent) -> tuple[torch.Tensor, l
     rewards = []
     while True:
         # Decide and Save action
-        action, log_action = agent.select_action(obs)
+        action, log_action_probs = agent.select_action(obs)
+        log_actions.append(log_action_probs)
 
-        # Take action and save reward
+        # Take action
         obs, reward, terminated, truncated, _ = env.step(action.numpy())
-
-        log_actions.append(log_action)
         rewards.append(reward)
 
         if terminated or truncated:
@@ -109,8 +107,8 @@ def discount_rewards(rewards: list, gamma: float) -> torch.Tensor:
         running_sum = rewards[t] + gamma * running_sum
         discounted_rewards[t] = running_sum
 
-    # discounted_rewards -= np.mean(discounted_rewards)
-    # discounted_rewards /= np.std(discounted_rewards)
+    discounted_rewards -= np.mean(discounted_rewards)
+    discounted_rewards /= np.std(discounted_rewards)
    
     return torch.from_numpy(discounted_rewards)
 
