@@ -33,7 +33,7 @@ def main():
                         device=device)
     
     # Load Weights
-    path = "weights/reinforce_good_weights.h5"
+    path = "weights/reinforce_weights.h5"
     agent.agent.load_state_dict(torch.load(path))
     agent.agent.eval()
 

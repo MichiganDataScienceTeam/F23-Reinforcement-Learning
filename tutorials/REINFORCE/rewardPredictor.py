@@ -3,9 +3,11 @@ import os
 import torch
 import torch.nn as nn
 import numpy as np
+import math
 
+torch.autograd.set_detect_anomaly(True)
 
-class VanillaAgent(nn.Module):
+class RewardPredictor(nn.Module):
     """
     REINFORCE agent Class.
 
@@ -37,7 +39,7 @@ class VanillaAgent(nn.Module):
             nn.ReLU(),
             nn.Linear(64, 64),
             nn.ReLU(),
-            nn.Linear(64, n_actions),
+            nn.Linear(64, 1),
         ]
 
         self.agent = nn.Sequential(*layers).to(self.device)
@@ -68,11 +70,11 @@ class VanillaAgent(nn.Module):
         """
         # TODO
         self.agent_optim.zero_grad()
-        loss.backward()
+        loss.backward(retain_graph = True)
         #print(loss.item())
         self.agent_optim.step()
 
-    def select_action(self, x: np.ndarray) -> tuple[torch.Tensor, torch.Tensor]:
+    def get_reward(self, state_action_list):
         """
         Action selection for agent
 
@@ -84,14 +86,10 @@ class VanillaAgent(nn.Module):
             action_log_probs: log probability of selected actions
         """
         # TODO
-        out = self.forward(torch.from_numpy(x))
-        out_dist = torch.distributions.Categorical(logits=out)
-        action = out_dist.sample()
-        action_log_prob = out_dist.log_prob(action)
+        out = self.forward(torch.from_numpy(state_action_list))
+        return out
 
-        return (action, action_log_prob)
-
-    def calc_loss(self, gs: torch.Tensor, log_probs: torch.Tensor) -> torch.Tensor:
+    def calc_loss(self, mu1: float, mu2: float, r_hat_1: list, r_hat_2: list) -> torch.Tensor:
         """
         Calculate loss
 
@@ -99,9 +97,13 @@ class VanillaAgent(nn.Module):
             gs: discounted sum of rewards for each timestep
             log_probs: action log probs at each timestep
         """
-        assert(gs.size() == log_probs.size())
 
         # TODO
-        loss = (-1 * (gs * log_probs)).sum()
-        
+        predicted_probability_1 = torch.exp(sum(r_hat_1)) / (torch.exp(sum(r_hat_1)) + torch.exp(sum(r_hat_2)))
+        predicted_probability_2 = torch.exp(sum(r_hat_2)) / (torch.exp(sum(r_hat_1)) + torch.exp(sum(r_hat_2)))
+        #print(predicted_probability_1, predicted_probability_2)
+        loss = -1 * (mu1 * torch.log(predicted_probability_1) + mu2 * torch.log(predicted_probability_2))
+        #print("MU'S: ", mu1, mu2)
+        #print("LOSS ", loss)
+
         return loss
