@@ -88,7 +88,7 @@ class VanillaAgent(nn.Module):
         action = action_pdf.sample()
         action_log_probs = action_pdf.log_prob(action)
 
-        return (action, action_log_probs)
+        return (action.item(), action_log_probs)
 
     def calc_loss(self, gs: torch.Tensor, log_probs: torch.Tensor) -> torch.Tensor:
         """
@@ -100,7 +100,10 @@ class VanillaAgent(nn.Module):
         """
         assert(gs.size() == log_probs.size())
 
-        # TODO
+        # TODO Caspers' apply long axis hack
+        # pad sequence
+        # matrix multiply. Sum along diagonal (dot product)
+        # sum that 1xepisodes length array to get 1 number (the loss)
         loss = 0
         loss = -torch.dot(gs, log_probs)
         loss = torch.sum(loss)

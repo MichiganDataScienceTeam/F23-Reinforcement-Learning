@@ -28,6 +28,9 @@ class RewardPredictor(nn.Module):
         super().__init__()
         self.device = device
 
+        self.n_features = n_features
+        self.n_actions = n_actions
+
         layers = [
             nn.Linear(n_features+n_actions, 64),
             nn.ReLU(),
@@ -56,7 +59,9 @@ class RewardPredictor(nn.Module):
         Returns:
             predicted_reward: predicted reward.
         """
-        inputs = np.concatenate((obs, action))
+        one_hot_action = np.zeros((self.n_actions))
+        one_hot_action[action] = 1
+        inputs = np.concatenate((obs, one_hot_action))
         x = torch.Tensor(inputs)
         predicted_reward = self.network(x)
         return predicted_reward
@@ -80,10 +85,8 @@ class RewardPredictor(nn.Module):
         Args:
             x
         """
-        targets = torch.tensor([item[2] for item in dataset])
-        seg_1_sums = [torch.sum([self.forward(o,a) for (o,a,_) in item[0]]) for item in dataset]
-        seg_2_sums = [torch.sum([self.forward(o,a) for (o,a,_) in item[1]]) for item in dataset]
-        logits = torch.tensor([seg_1_sums,seg_2_sums]).T
-
-
+        targets = torch.tensor([item[2] for item in dataset], dtype=torch.float)
+        seg_1_sums = torch.stack([sum([self.forward(o,a) for (o,a,_) in item[0]]) for item in dataset])
+        seg_2_sums = torch.stack([sum([self.forward(o,a) for (o,a,_) in item[1]]) for item in dataset])
+        logits = torch.cat([seg_1_sums,seg_2_sums], dim=1)
         return self.loss(logits, targets)
