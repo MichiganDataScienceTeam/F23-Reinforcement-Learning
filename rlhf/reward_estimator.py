@@ -26,12 +26,12 @@ class Rewards(nn.Module):
         # NOTE: This assumes that the action space is Discrete(4), as with LunarLander.
         self.layers = [
             nn.Linear(environment.observation_space.shape[0] + 4, 64),
-            nn.Dropout(0.25),
+            nn.Dropout(0.2),
             nn.ReLU(),
-            # nn.Linear(64, 64),
-            # nn.Dropout(0.25),
-            # nn.ReLU(),
-            nn.Linear(64, 1),
+            nn.Linear(64, 32),
+            nn.Dropout(0.2),
+            nn.ReLU(),
+            nn.Linear(32, 1),
         ]
         self.agent = nn.Sequential(*self.layers).to(self.device)
         self.agent.requires_grad_(True)

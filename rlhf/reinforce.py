@@ -1,4 +1,5 @@
 import argparse
+from functools import reduce
 import gymnasium as gym
 from gymnasium.wrappers.monitoring.video_recorder import VideoRecorder
 import numpy as np
@@ -17,7 +18,7 @@ from reward_estimator import Rewards
 
 
 parser = argparse.ArgumentParser(description='PyTorch REINFORCE example')
-parser.add_argument('--gamma', type=float, default=0.97, metavar='G',
+parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
                     help='discount factor (default: 0.99)')
 parser.add_argument('--seed', type=int, default=129, metavar='N',
                     help='random seed (default: 543)')
@@ -53,10 +54,10 @@ class Policy(nn.Module):
 
 
 policy = Policy()
-optimizer = optim.Adam(policy.parameters(), lr=1e-2)
+optimizer = optim.Adam(policy.parameters(), lr=1e-4)
 eps = np.finfo(np.float32).eps.item()
 rewards_device = 'mps' if torch.backends.mps.is_available() else 'cpu'
-rewards = Rewards(env, 1e-2, torch.device(rewards_device))
+rewards = Rewards(env, 1e-3, torch.device(rewards_device))
 
 
 def select_action(state):
@@ -68,7 +69,18 @@ def select_action(state):
     return action.item()
 
 
-def finish_episode(i_episode, r_hat: torch.Tensor):
+def policy_training_step(policy_losses: list[list[torch.Tensor]]):
+    optimizer.zero_grad()
+    loss_sums = [torch.cat(policy_loss).sum() for policy_loss in policy_losses]
+    batch_loss = reduce(lambda a, b: a + b, loss_sums).mean() # maybe sum?
+    # mean: each trajectory has the same weight regardless of its length
+    print("Policy loss sum", batch_loss.item())
+    batch_loss.backward()
+    optimizer.step()
+
+
+def discounted_policy_loss(i_episode, r_hat: torch.Tensor, plot) -> list[torch.Tensor]:
+    # pad_sequence https://pytorch.org/docs/stable/generated/torch.nn.utils.rnn.pad_sequence.html
     R = 0
     policy_loss = []
     returns = deque()
@@ -81,20 +93,9 @@ def finish_episode(i_episode, r_hat: torch.Tensor):
     for log_prob, R in zip(policy.saved_log_probs, returns):
         policy_loss.append(-log_prob * R)
     # print("Policy losses", [p.item() for p in policy_loss])
-    plt.clf()
-    plt.plot([p.item() for p in policy_loss])
-    plt.savefig(f'figures/{i_episode}-policy-losses.png', dpi=250)
-    if i_episode > 300 and i_episode % 10 == 0:
-        plt.clf()
-        plt.plot(returns.detach().numpy())
-        plt.savefig(str(i_episode) + '.png', dpi=200)
-    optimizer.zero_grad()
-    policy_loss = torch.cat(policy_loss).sum()
-    print("Policy loss sum", policy_loss.item())
-    policy_loss.backward()
-    optimizer.step()
-    del policy.rewards[:]
-    del policy.saved_log_probs[:]
+    if plot is not None:
+        plot.plot([p.item() for p in policy_loss])
+    return policy_loss
 
 
 # Returns List[Tuple[ObsType, ActType, float]]
@@ -102,7 +103,7 @@ def generate_trajectory(state, record=False):
     trajectory = []
 
     venv = VideoRecorder(env, base_path='figures/video') if record else None
-    for _ in range(1, 10000):  # Don't infinite loop while learning
+    for _ in range(1, 500):  # Don't infinite loop while learning
         action = select_action(state)
         obs, reward, done, _, _ = env.step(action)
         if venv is not None:
@@ -131,7 +132,7 @@ def main():
         ep_reward = 0
 
         # TODO: pass trajectories to discriminator
-        NUM_PAIRS = 200 if i_episode < 2 else 40 # i guess this is a hyperparameter
+        NUM_PAIRS = 80 if i_episode < 2 else 80 # i guess this is a hyperparameter
         for _ in range(NUM_PAIRS):
             state, _ = env.reset()
             traj1 = generate_trajectory(state)
@@ -139,17 +140,34 @@ def main():
             traj2 = generate_trajectory(state)
             feedback = compare(traj1, traj2)
             database.append((traj1, traj2, feedback))
-            print('D', end='')
         print(" Database size", len(database))
         # database type: List[Tuple[Trajectory, Trajectory, Tuple[float, float]]]
 
         running_reward = 0.05 * ep_reward + (1 - 0.05) * running_reward
 
         state, _ = env.reset()
-        training_traj = generate_trajectory(state, record=True)
-        finish_episode(i_episode, rewards.estimate_reward(training_traj))
-        print(sum([reward for _, _, reward in training_traj]) / (len(training_traj) + 0.1))
-
+        NUM_REINFORCE_TRAJ = 20 # hyperparameter: how many trajectories per batch?
+        policy_losses: list[list[torch.Tensor]] = []
+        plt.clf()
+        fig, axes = plt.subplots(1, 2)
+        for i in range(NUM_REINFORCE_TRAJ):
+            state, _ = env.reset()
+            training_traj = generate_trajectory(state, record=i == 0)
+            policy_loss = discounted_policy_loss(i_episode,
+                                                 rewards.estimate_reward(training_traj),
+                                                 plot=axes[0] if i % 5 == 0 else None)
+            discounted_policy_loss(i_episode,
+                                   torch.Tensor([s[2] for s in training_traj]),
+                                   plot=axes[1] if i % 5 == 0 else None)
+            del policy.rewards[:]
+            del policy.saved_log_probs[:]
+            policy_losses.append(policy_loss)
+            print('mean reward', sum([reward for _, _, reward in training_traj]) / (len(training_traj) + 0.1))
+        policy_training_step(policy_losses)
+        fig.suptitle(f'Policy loss (episode {i_episode})')
+        axes[0].set_title('Predicted')
+        axes[1].set_title('Actual')
+        plt.savefig(f'figures/policy-losses-{i_episode}.png', dpi=200)
 
         rewards.update(rewards.loss(database))
 
