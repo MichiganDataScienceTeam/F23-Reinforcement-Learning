@@ -171,7 +171,7 @@ if __name__=="__main__":
 
     dataset = []
 
-    iterations = 1
+    iterations = 100
     for i in tqdm(range(iterations)):
         # Process 1
         episodes = []
