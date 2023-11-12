@@ -27,11 +27,11 @@ class Rewards(nn.Module):
         self.layers = [
             nn.Linear(environment.observation_space.shape[0] + 4, 64),
             nn.Dropout(0.25),
-            nn.LeakyReLU(),
-            nn.Linear(64, 128),
-            nn.Dropout(0.25),
-            nn.LeakyReLU(),
-            nn.Linear(128, 1),
+            nn.ReLU(),
+            # nn.Linear(64, 64),
+            # nn.Dropout(0.25),
+            # nn.ReLU(),
+            nn.Linear(64, 1),
         ]
         self.agent = nn.Sequential(*self.layers).to(self.device)
         self.agent.requires_grad_(True)
@@ -46,7 +46,7 @@ class Rewards(nn.Module):
         for obs, act, _ in t:
             act_onehot = [0] * 4
             act_onehot[act] = 1
-            line = torch.concat([obs.flatten(), torch.Tensor(act_onehot)])
+            line = torch.concat([torch.Tensor(obs.flatten()), torch.Tensor(act_onehot)])
             lines.append(line)
         return torch.stack(lines)
     
@@ -62,7 +62,7 @@ class Rewards(nn.Module):
     def loss(self, trajectory_pairs: List[Tuple[Trajectory, Trajectory, Tuple[float, float]]]) -> torch.Tensor:
         # trajectory_pairs represents the database of human feedback
         # Each tuple (trajectory, trajectory, mu) represents a pair with feedback
-        loss = torch.Tensor(0)
+        loss = torch.Tensor([0]).to(self.device)
         for element in trajectory_pairs:
             loss += element[2][0] * torch.log(self.P_hat(element[0], element[1])) + element[2][1] * torch.log(self.P_hat(element[1], element[0]))
         loss *= -1
@@ -70,6 +70,7 @@ class Rewards(nn.Module):
     
     def update(self, loss: torch.Tensor):
         self.agent_optim.zero_grad()
+        print("Reward estimator loss is", loss.item())
         loss.backward()
         self.agent_optim.step()
 

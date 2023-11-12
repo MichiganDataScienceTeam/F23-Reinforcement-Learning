@@ -1,5 +1,6 @@
 import argparse
 import gymnasium as gym
+from gymnasium.wrappers.monitoring.video_recorder import VideoRecorder
 import numpy as np
 from itertools import count
 from collections import deque
@@ -10,6 +11,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions import Categorical
 import matplotlib.pyplot as plt
+from typing import List, Tuple
 
 from reward_estimator import Rewards
 
@@ -26,7 +28,7 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='N',
 args = parser.parse_args()
 
 
-env = gym.make('LunarLander-v2')
+env = gym.make('LunarLander-v2', render_mode='rgb_array')
 env.reset(seed=args.seed)
 torch.manual_seed(args.seed)
 
@@ -41,7 +43,8 @@ class Policy(nn.Module):
         self.saved_log_probs = []
         self.rewards = []
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
+        assert not torch.isnan(x).any()
         x = self.affine1(x)
         x = self.dropout(x)
         x = F.relu(x)
@@ -70,19 +73,24 @@ def finish_episode(i_episode, r_hat: torch.Tensor):
     policy_loss = []
     returns = deque()
     # r_hat is a sequence of r_hat estimates from our reward estimator
-    for r in r_hat.numpy()[::-1]:
+    for r in r_hat.detach().cpu().numpy()[::-1]:
         R = r + args.gamma * R
         returns.appendleft(R)
-    returns = torch.tensor(returns)
+    returns = torch.tensor(np.array(returns))
     returns = (returns - returns.mean()) / (returns.std() + eps)
     for log_prob, R in zip(policy.saved_log_probs, returns):
         policy_loss.append(-log_prob * R)
+    # print("Policy losses", [p.item() for p in policy_loss])
+    plt.clf()
+    plt.plot([p.item() for p in policy_loss])
+    plt.savefig(f'figures/{i_episode}-policy-losses.png', dpi=250)
     if i_episode > 300 and i_episode % 10 == 0:
         plt.clf()
         plt.plot(returns.detach().numpy())
         plt.savefig(str(i_episode) + '.png', dpi=200)
     optimizer.zero_grad()
     policy_loss = torch.cat(policy_loss).sum()
+    print("Policy loss sum", policy_loss.item())
     policy_loss.backward()
     optimizer.step()
     del policy.rewards[:]
@@ -90,11 +98,15 @@ def finish_episode(i_episode, r_hat: torch.Tensor):
 
 
 # Returns List[Tuple[ObsType, ActType, float]]
-def generate_trajectory(state):
-    trajectory = [state]
+def generate_trajectory(state, record=False):
+    trajectory = []
+
+    venv = VideoRecorder(env, base_path='figures/video') if record else None
     for _ in range(1, 10000):  # Don't infinite loop while learning
         action = select_action(state)
         obs, reward, done, _, _ = env.step(action)
+        if venv is not None:
+            venv.capture_frame()
         trajectory.append((
             obs,
             action,
@@ -104,6 +116,8 @@ def generate_trajectory(state):
             env.render()
         if done:
             break
+    if venv is not None:
+        venv.close()
     return trajectory
 
 def main():
@@ -117,19 +131,25 @@ def main():
         ep_reward = 0
 
         # TODO: pass trajectories to discriminator
-        NUM_PAIRS = 10 # i guess this is a hyperparameter
+        NUM_PAIRS = 200 if i_episode < 2 else 40 # i guess this is a hyperparameter
         for _ in range(NUM_PAIRS):
             state, _ = env.reset()
             traj1 = generate_trajectory(state)
             state, _ = env.reset()
             traj2 = generate_trajectory(state)
-            feedback = compare(traj2, traj2)
+            feedback = compare(traj1, traj2)
             database.append((traj1, traj2, feedback))
+            print('D', end='')
+        print(" Database size", len(database))
         # database type: List[Tuple[Trajectory, Trajectory, Tuple[float, float]]]
 
         running_reward = 0.05 * ep_reward + (1 - 0.05) * running_reward
 
-        finish_episode(i_episode, rewards.estimate_reward(generate_trajectory(state)))
+        state, _ = env.reset()
+        training_traj = generate_trajectory(state, record=True)
+        finish_episode(i_episode, rewards.estimate_reward(training_traj))
+        print(sum([reward for _, _, reward in training_traj]) / (len(training_traj) + 0.1))
+
 
         rewards.update(rewards.loss(database))
 
@@ -145,7 +165,7 @@ def main():
     state, _ = env.reset()
     for t in range(1, 10000):  # Don't infinite loop while learning
         action = select_action(state)
-        state, reward, done, _, _ = env.step(action)
+        state, _, done, _, _ = env.step(action)
         if args.render:
             env.render()
         if done:
