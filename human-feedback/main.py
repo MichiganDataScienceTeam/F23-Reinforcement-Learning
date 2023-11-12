@@ -11,27 +11,28 @@ from reinforceAgent import VanillaAgent
 from rewardPredictor import RewardPredictor
 
 
-def discount_rewards(rewards: list, gamma: float) -> torch.Tensor:
+def discount_rewards(rewards: list[torch.Tensor], gamma: float, normalize=False) -> torch.Tensor:
     """
     Calculate normalized discounted sum of rewards for episode.
 
     Args:
-        rewards: array of rewards recieved during each timestep
+        rewards: Tensor of rewards recieved during each timestep
         gamma: discount factor
 
     Returns:
         discounted_rewards: tensor of discounted sum of rewards for each timestep
     """
-    discounted_rewards = np.zeros_like(rewards, dtype=np.float32)
+    discounted_rewards = torch.zeros(len(rewards), dtype=torch.float32)
     running_sum = 0.0
     for t in reversed(range(len(rewards))):
         running_sum = rewards[t] + gamma * running_sum
         discounted_rewards[t] = running_sum
 
-    # discounted_rewards -= np.mean(discounted_rewards)
-    # discounted_rewards /= np.std(discounted_rewards)
+    if normalize:
+        discounted_rewards -= torch.mean(discounted_rewards)
+        discounted_rewards /= torch.std(discounted_rewards)
    
-    return torch.from_numpy(discounted_rewards)
+    return discounted_rewards
 
 
 def generate_episode(env: gym.Env, policy: VanillaAgent, r_hat: RewardPredictor):
@@ -62,7 +63,8 @@ def generate_episode(env: gym.Env, policy: VanillaAgent, r_hat: RewardPredictor)
         log_actions.append(action_log_probs)
 
         # get r_hat
-        r = r_hat(obs, action)
+        with torch.no_grad():
+            r = r_hat(obs, action)
         r_hats.append(r)
 
         # take action
@@ -75,7 +77,7 @@ def generate_episode(env: gym.Env, policy: VanillaAgent, r_hat: RewardPredictor)
         if terminated or truncated:
             break
 
-    return obs_a_data, torch.tensor(log_actions), r_hats
+    return obs_a_data, torch.Tensor(log_actions), r_hats
 
 
 def get_segments(episodes: list[tuple], number: int) -> list[tuple[list, list]]:
@@ -169,21 +171,23 @@ if __name__=="__main__":
 
     dataset = []
 
-    iterations = 50
+    iterations = 1
     for i in tqdm(range(iterations)):
         # Process 1
         episodes = []
         log_actions = []
         r_hats = []
-        num_episodes = 5
+        num_episodes = 10
         for i in range(num_episodes):
-            ep_data, ep_log_acts, ep_r_hats = generate_episode(env, agent)
+            ep_data, ep_log_acts, ep_r_hats = generate_episode(env, agent, r_hat)
             # generate_episode
             episodes.append(ep_data)
             log_actions.append(ep_log_acts)
             r_hats.append(ep_r_hats)
         # something to train the RL network
+        # We think r_hats, and log_actions have matching dimensions
         r_hats = list(map(lambda x: discount_rewards(x, gamma), r_hats))
+        loss = agent.calc_loss(r_hats, log_actions)
 
         # Process 2
         segments = get_segments(episodes, num_episodes - 1)
@@ -196,5 +200,8 @@ if __name__=="__main__":
         # update r_hat on data
         loss = r_hat.calc_loss(dataset)
         r_hat.update(loss)
-
+    
+    if not os.path.exists("weights"):
+        os.mkdir("weights")
+    torch.save(agent.agent.state_dict(), "weights/first_weights.h1")
     

@@ -90,22 +90,21 @@ class VanillaAgent(nn.Module):
 
         return (action.item(), action_log_probs)
 
-    def calc_loss(self, gs: torch.Tensor, log_probs: torch.Tensor) -> torch.Tensor:
+    def calc_loss(self, gs: list[torch.Tensor], log_probs: list[torch.Tensor]) -> torch.Tensor:
         """
-        Calculate loss
+        Calculate loss. The 0th dimension matches. The length of each episode may be different.
+        So we pad the 1th dimension with zeroes.
 
         Args:
             gs: discounted sum of rewards for each timestep
+                dimensionality is (# eps, ep length)
             log_probs: action log probs at each timestep
         """
-        assert(gs.size() == log_probs.size())
+        # assert(gs.size() == log_probs.size())
+        
+        pad_gs = torch.nn.utils.rnn.pad_sequence(gs)
+        pad_probs = torch.nn.utils.rnn.pad_sequence(log_probs)
 
-        # TODO Caspers' apply long axis hack
-        # pad sequence
-        # matrix multiply. Sum along diagonal (dot product)
-        # sum that 1xepisodes length array to get 1 number (the loss)
-        loss = 0
-        loss = -torch.dot(gs, log_probs)
-        loss = torch.sum(loss)
+        loss = -torch.sum(pad_gs * pad_probs)
         
         return loss
